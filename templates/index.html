@@ -32,6 +32,13 @@
             <div>{{ shortages_table | safe }}</div>
         </div>
         {% endif %}
+
+        {% if grouped_table %}
+        <div class="mt-4">
+            <h3>Grouped Shortages by Finish Code:</h3>
+            <div>{{ grouped_table | safe }}</div>
+        </div>
+        {% endif %}
     </div>
 </body>
 </html>
