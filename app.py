@@ -36,11 +36,20 @@ def index():
                 return f"Error reading file: {str(e)}"
             
             data = df.to_html(classes="table table-striped")  # Convert to HTML table
-            return render_template("index.html", table=data)
+            
+            # Extract SO Number (Column 2) and Shortages (Column 7) and create new table
+            if df.shape[1] >= 7:  # Ensure at least 7 columns exist
+                selected_columns = df.iloc[:, [1, 6]].dropna()
+                selected_columns.columns = ["SO Number", "Shortages"]
+                shortages_table = selected_columns.to_html(classes="table table-bordered", index=False)
+            else:
+                shortages_table = "<p>Not enough columns in the uploaded file.</p>"
+
+            return render_template("index.html", table=data, shortages_table=shortages_table)
         else:
             return "Invalid file type. Please upload an Excel file (.xls, .xlsx, .ods)"
     
-    return render_template("index.html", table=None)
+    return render_template("index.html", table=None, shortages_table=None)
 
 if __name__ == "__main__":
     app.run(debug=True)
