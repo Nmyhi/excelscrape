@@ -13,8 +13,27 @@ def allowed_file(filename):
     return "." in filename and filename.rsplit(".", 1)[1].lower() in ALLOWED_EXTENSIONS
 
 def extract_finish_code(part_number):
-    match = re.search(r"-\w+$", part_number)
+    """
+    Extracts the finish code from a part number.
+    Assumes the finish code is in the format '-XX' (e.g., '-01').
+    """
+    match = re.search(r"-\d{2}$", part_number)  # Matches a dash followed by two digits at the end
     return match.group(0) if match else part_number
+
+def clean_shortages(shortage_str):
+    """
+    Cleans the shortages string by:
+    - Removing content in brackets
+    - Removing the word 'shortage'
+    - Replacing commas and slashes with spaces
+    - Ignoring 'WIP - PRODUCTION'
+    """
+    shortage_str = re.sub(r"\(.*?\)", "", shortage_str)  # Remove content inside brackets
+    shortage_str = shortage_str.replace("shortage", "").strip()  # Remove the word 'shortage'
+    shortage_str = shortage_str.replace(",", " ").replace("/", " ")  # Replace commas and slashes with spaces
+    if "WIP - PRODUCTION" in shortage_str:
+        return ""  # Ignore WIP - PRODUCTION entries
+    return shortage_str.split()
 
 @app.route("/", methods=["GET", "POST"])
 def index():
@@ -29,6 +48,7 @@ def index():
             file.save(filepath)
             
             try:
+                # Read the file based on extension
                 if file.filename.endswith(".xlsx"):
                     df = pd.read_excel(filepath, engine="openpyxl")
                 elif file.filename.endswith(".xls"):
@@ -40,20 +60,30 @@ def index():
             except Exception as e:
                 return f"Error reading file: {str(e)}"
             
-            data = df.to_html(classes="table table-striped")  # Convert to HTML table
+            # Convert to HTML table for display
+            data = df.to_html(classes="table table-striped")
             
-            # Extract SO Number (Column 2) and Shortages (Column 7) and create new table
-            if df.shape[1] >= 7:  # Ensure at least 7 columns exist
-                selected_columns = df.iloc[:, [1, 6]].dropna()
+            # Ensure there are at least 7 columns before proceeding
+            if df.shape[1] >= 7:
+                selected_columns = df.iloc[:, [0, 5]].dropna()  # Extract SO Number (1st col) & Shortages (6th col)
                 selected_columns.columns = ["SO Number", "Shortages"]
-                shortages_table = selected_columns.to_html(classes="table table-bordered", index=False)
                 
-                # Process shortages to group by finish code
-                shortages_expanded = selected_columns.copy()
-                shortages_expanded["Shortages"] = shortages_expanded["Shortages"].astype(str).str.split()
-                shortages_expanded = shortages_expanded.explode("Shortages")
-                shortages_expanded["Finish Code"] = shortages_expanded["Shortages"].apply(extract_finish_code)
-                grouped_shortages = shortages_expanded.groupby("Finish Code")["Shortages"].apply(lambda x: ', '.join(x.unique())).reset_index()
+                # Process shortages
+                selected_columns["Shortages"] = selected_columns["Shortages"].astype(str).apply(clean_shortages)
+                selected_columns = selected_columns.explode("Shortages")  # Expand shortages into separate rows
+                selected_columns.dropna(inplace=True)  # Remove any NaN values
+
+                # Filter out empty rows and those containing "Shortage" or "-"
+                selected_columns = selected_columns[(selected_columns["Shortages"] != "") & (selected_columns["Shortages"] != "-")]
+
+                # Extract Finish Code
+                selected_columns["Finish Code"] = selected_columns["Shortages"].apply(extract_finish_code)
+                
+                # Group by Finish Code and collect associated SO Numbers
+                grouped_shortages = selected_columns.groupby("Finish Code")["SO Number"].apply(lambda x: ', '.join(map(str, x.unique()))).reset_index()
+                
+                # Convert tables to HTML for display
+                shortages_table = selected_columns.to_html(classes="table table-bordered", index=False)
                 grouped_table = grouped_shortages.to_html(classes="table table-bordered", index=False)
             else:
                 shortages_table = "<p>Not enough columns in the uploaded file.</p>"
